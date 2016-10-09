@@ -1,8 +1,19 @@
+#include <Adafruit_NeoPixel.h>
+
 #include <SoftwareSerial.h> // needed for serial comm over digital pins other than onboard UART serial-over-usb
 #include <Wire.h> // needed for I2C decives (SDA,SCL)
 #include "Adafruit_NeoPixel.h"
 #include "Adafruit_TCS34725.h"
 
+//wifi 
+#include <SPI.h>
+#include <WiFi.h>
+
+//Wifi - WPA2 AES CCPM
+char ssid[] = "rover1";     //  your network SSID (name)
+char pass[] = "hgoedbgmd";  // your network password
+int status = WL_IDLE_STATUS;     // the Wifi radio's status
+IPAddress ip(192, 168, 3, 7);
 
 // Which pin on the Arduino is connected to the NeoPixels?
 const int PIN_NEOPIXEL_OUT = 6;
@@ -13,13 +24,7 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(1, PIN_NEOPIXEL_OUT, NEO_GRB + NEO_
 // Color sensor setup
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_700MS, TCS34725_GAIN_1X);
 
-// Set up SoftwareSerial to Bluetooth transmitter
-const int PIN_BTSERIAL_RX = 10;
-const int PIN_BTSERIAL_TX = 11;
-SoftwareSerial BtSerial(PIN_BTSERIAL_RX, PIN_BTSERIAL_TX); // RX, TX
-
-
-const int PIN_FLOWSENSOR_IN = 3;
+const int PIN_FLOWSENSOR_IN = 12;
 
 // Counts the number of times that the HIGH signal is reached
 volatile unsigned int flowSensorHighCount;
@@ -33,7 +38,40 @@ void setup()
   Serial.begin(9600);
 
   // Set the data rate and start the SoftwareSerial port
-  BtSerial.begin(9600);
+  //BtSerial.begin(9600);
+//wifi init part 
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+  // check for the presence of the shield:
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("WiFi shield not present");
+    // don't continue:
+    while (true);
+  }
+  WiFi.config(ip);
+
+  String fv = WiFi.firmwareVersion();
+  if (fv != "1.1.0") {
+    Serial.println("Please upgrade the firmware");
+  }
+
+  // attempt to connect to Wifi network:
+  while (status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to WPA SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network:
+    status = WiFi.begin(ssid, pass);
+
+    // wait 10 seconds for connection:
+    delay(10000);
+  }
+
+  // you're connected now, so print out the data:
+  Serial.print("You're connected to the network");
+  printCurrentNet();
+  printWifiData();
+//wifi init part done
 
   // Assign the functionality of pins
   pinMode( PIN_FLOWSENSOR_IN, INPUT );
@@ -121,7 +159,7 @@ void loop()
   // Print our data in this order:
   // flowRate, currentColorIndex, colorTemp, lux, sensorRedVal, sensorGreenVal, sensorBlueVal, sensorC;
 
-  Serial.print(flowRate);
+  /*Serial.print(flowRate);
   Serial.print(",");
   Serial.print(currentColorIndex);
   Serial.print(",");
@@ -136,9 +174,9 @@ void loop()
   Serial.print(sensorBlueVal);
   Serial.print(",");
   Serial.print(sensorC);
-  Serial.print(",\n");
+  Serial.print(",\n");*/
 
-  BtSerial.print(flowRate);
+  /*BtSerial.print(flowRate);
   BtSerial.print(",");
   BtSerial.print(currentColorIndex);
   BtSerial.print(",");
@@ -153,7 +191,11 @@ void loop()
   BtSerial.print(sensorBlueVal);
   BtSerial.print(",");
   BtSerial.print(sensorC);
-  BtSerial.print(",\n");
+  BtSerial.print(",\n");*/
+
+  // check the network connection once every 10 seconds:
+  delay(10000);
+  printCurrentNet();
   
   // For the next time around, we set up the next LED color to use.
   // This will cycle from 0-2, where 0=red 1=green 2=blue
@@ -172,5 +214,63 @@ void RegisterFlowSensorHigh()
   flowSensorHighCount++;
 }
 
+//wifi functions
+void printWifiData() {
+  // print your WiFi shield's IP address:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+  Serial.println(ip);
+
+  // print your MAC address:
+  byte mac[6];
+  WiFi.macAddress(mac);
+  Serial.print("MAC address: ");
+  Serial.print(mac[5], HEX);
+  Serial.print(":");
+  Serial.print(mac[4], HEX);
+  Serial.print(":");
+  Serial.print(mac[3], HEX);
+  Serial.print(":");
+  Serial.print(mac[2], HEX);
+  Serial.print(":");
+  Serial.print(mac[1], HEX);
+  Serial.print(":");
+  Serial.println(mac[0], HEX);
+
+}
+
+void printCurrentNet() {
+  // print the SSID of the network you're attached to:
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+
+  // print the MAC address of the router you're attached to:
+  byte bssid[6];
+  WiFi.BSSID(bssid);
+  Serial.print("BSSID: ");
+  Serial.print(bssid[5], HEX);
+  Serial.print(":");
+  Serial.print(bssid[4], HEX);
+  Serial.print(":");
+  Serial.print(bssid[3], HEX);
+  Serial.print(":");
+  Serial.print(bssid[2], HEX);
+  Serial.print(":");
+  Serial.print(bssid[1], HEX);
+  Serial.print(":");
+  Serial.println(bssid[0], HEX);
+
+  // print the received signal strength:
+  long rssi = WiFi.RSSI();
+  Serial.print("signal strength (RSSI):");
+  Serial.println(rssi);
+
+  // print the encryption type:
+  byte encryption = WiFi.encryptionType();
+  Serial.print("Encryption Type:");
+  Serial.println(encryption, HEX);
+  Serial.println();
+}
 
 // END OF FILE
