@@ -24,7 +24,7 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(1, PIN_NEOPIXEL_OUT, NEO_GRB + NEO_
 // Color sensor setup
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_700MS, TCS34725_GAIN_1X);
 
-const int PIN_FLOWSENSOR_IN = 12;
+const int PIN_FLOWSENSOR_IN = 2; //must be a pin capable of an external hardware interupt
 
 // Counts the number of times that the HIGH signal is reached
 volatile unsigned int flowSensorHighCount;
