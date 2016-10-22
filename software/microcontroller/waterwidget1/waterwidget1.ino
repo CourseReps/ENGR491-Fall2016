@@ -5,15 +5,24 @@
 #include "Adafruit_NeoPixel.h"
 #include "Adafruit_TCS34725.h"
 
+#include <stdio.h>
+
 //wifi 
 #include <SPI.h>
 #include <WiFi.h>
+//#include <WiFiUdp.h>
+
+char packetBuffer[255]; //buffer to hold incoming packet
+//char  ReplyBuffer[] = "http://rover1/submit?r=10&b=10&g=10";       // a string to send back
+unsigned int localPort = 2390;      // local port to listen on
+char server[] = "192.168.101.1";
+//byte server[] = {192,168,101,1};
+WiFiClient client;
 
 //Wifi - WPA2 AES CCPM
 char ssid[] = "rover1";     //  your network SSID (name)
 char pass[] = "hgoedbgmd";  // your network password
 int status = WL_IDLE_STATUS;     // the Wifi radio's status
-IPAddress ip(192, 168, 3, 7);
 
 // Which pin on the Arduino is connected to the NeoPixels?
 const int PIN_NEOPIXEL_OUT = 6;
@@ -34,61 +43,63 @@ volatile unsigned int flowSensorHighCount;
 //------------------------------------------------------------------
 void setup()
 {  
-  // Open serial communications and wait for port to open:
-  Serial.begin(9600);
-
-  // Set the data rate and start the SoftwareSerial port
-  //BtSerial.begin(9600);
-//wifi init part 
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
-  // check for the presence of the shield:
-  if (WiFi.status() == WL_NO_SHIELD) {
-    Serial.println("WiFi shield not present");
-    // don't continue:
-    while (true);
-  }
-  WiFi.config(ip);
-
-  String fv = WiFi.firmwareVersion();
-  if (fv != "1.1.0") {
-    Serial.println("Please upgrade the firmware");
-  }
-
-  // attempt to connect to Wifi network:
-  while (status != WL_CONNECTED) {
-    Serial.print("Attempting to connect to WPA SSID: ");
-    Serial.println(ssid);
-    // Connect to WPA/WPA2 network:
-    status = WiFi.begin(ssid, pass);
-
-    // wait 10 seconds for connection:
-    delay(10000);
-  }
-
-  // you're connected now, so print out the data:
-  Serial.print("You're connected to the network");
-  printCurrentNet();
-  printWifiData();
-//wifi init part done
-
-  // Assign the functionality of pins
-  pinMode( PIN_FLOWSENSOR_IN, INPUT );
-
-  if (tcs.begin()) {
-    Serial.println("Found sensor");
-  } else {
-    Serial.println("No TCS34725 found ... check your connections");
-    while (1);
-  }
-
-  // Initialize the NeoPixel library.
-  pixels.begin(); 
-  
-  // Assign an interrupt so that when the flow sensor pin goes from
-  // LOW to HIGH, a function will be triggered.
-  attachInterrupt(digitalPinToInterrupt(PIN_FLOWSENSOR_IN), RegisterFlowSensorHigh, RISING);
+    // Open serial communications and wait for port to open:
+    Serial.begin(9600);
+    
+    // Set the data rate and start the SoftwareSerial port
+    //BtSerial.begin(9600);
+    //wifi init part 
+    while (!Serial) {
+        ; // wait for serial port to connect. Needed for native USB port only
+    }
+    // check for the presence of the shield:
+    if (WiFi.status() == WL_NO_SHIELD) {
+        Serial.println("WiFi shield not present");
+        // don't continue:
+        while (true);
+    }
+    //  WiFi.config(ip);
+    
+    
+    
+    String fv = WiFi.firmwareVersion();
+    if (fv != "1.1.0") {
+        Serial.println("Please upgrade the firmware");
+    }
+    
+    // attempt to connect to Wifi network:
+    while (status != WL_CONNECTED) {
+        Serial.print("Attempting to connect to WPA SSID: ");
+        Serial.println(ssid);
+        // Connect to WPA/WPA2 network:
+        status = WiFi.begin(ssid, pass);
+        
+        // wait 10 seconds for connection:
+        delay(10000);
+    }
+    
+    // you're connected now, so print out the data:
+    Serial.print("You're connected to the network");
+    printCurrentNet();
+    printWifiData();
+    //wifi init part done
+    
+    // Assign the functionality of pins
+    pinMode( PIN_FLOWSENSOR_IN, INPUT );
+    
+    if (tcs.begin()) {
+        Serial.println("Found sensor");
+    } else {
+        Serial.println("No TCS34725 found ... check your connections");
+        while (1);
+    }
+    
+    // Initialize the NeoPixel library.
+    pixels.begin(); 
+    
+    // Assign an interrupt so that when the flow sensor pin goes from
+    // LOW to HIGH, a function will be triggered.
+    //attachInterrupt(digitalPinToInterrupt(PIN_FLOWSENSOR_IN), RegisterFlowSensorHigh, RISING);
 }
 
 //------------------------------------------------------------------
@@ -96,112 +107,154 @@ void setup()
 //------------------------------------------------------------------
 void loop()
 {
-  //----------------------------------------------
-  // FLOW SENSOR
-  //----------------------------------------------
-  
-  // Reset our interrupt counter back to zero.
-  flowSensorHighCount = 0;
+    //----------------------------------------------
+    // FLOW SENSOR
+    //----------------------------------------------
+    
+    // Reset our interrupt counter back to zero.
+    flowSensorHighCount = 0;
+    
+    // Turn on interrupts so we can collect flowrate sensor interrupts.
+    interrupts();
+    // Allow interrupt collection for 1 second.
+    delay(1000);
+    // Turn interrupts off again.
+    noInterrupts();
+    // Calculate the flowrate from how many interrupts occured during one sec.
+    int flowRate = (flowSensorHighCount * 60.0 / 7.5);
+    
+    //----------------------------------------------
+    // LED LIGHT (neopixel)
+    //----------------------------------------------
+    
+    // this will naturally initialize to zero, and at the end of this
+    // loop function we cycle it from 0-2, where 0=red 1=green 2=blue
+    static unsigned currentColorIndex; 
+    
+    int ledRedVal, ledGreenVal, ledBlueVal;
+    
+    if( currentColorIndex == 0 )
+    {
+        ledRedVal = 200; ledGreenVal = 0; ledBlueVal = 0;
+    }
+    if( currentColorIndex == 1 )
+    {
+        ledRedVal = 0; ledGreenVal = 200; ledBlueVal = 0;
+    }
+    if( currentColorIndex == 2 )
+    {
+        ledRedVal = 0; ledGreenVal = 0; ledBlueVal = 200;
+    }
+    
+    // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
+    pixels.setPixelColor( 0, pixels.Color( ledRedVal, ledGreenVal, ledBlueVal ) );
+    pixels.show(); // This sends the updated pixel color to the hardware.
+    
+    //----------------------------------------------
+    // COLOR SENSOR
+    //----------------------------------------------
+    
+    // Set up vars for color sensor
+    uint16_t sensorRedVal, sensorGreenVal, sensorBlueVal, sensorC, colorTemp, lux;
+    
+    // Populate color sensor vars
+    tcs.getRawData( &sensorRedVal, &sensorGreenVal, &sensorBlueVal, &sensorC );
+    // calculate the rest of our color sensor values
+    colorTemp = tcs.calculateColorTemperature( sensorRedVal, sensorGreenVal, sensorBlueVal );
+    lux = tcs.calculateLux( sensorRedVal, sensorGreenVal, sensorBlueVal );
+    
+    //wifi send
+    //Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
+    //Udp.write(ReplyBuffer);
+    //Udp.endPacket();
+    
+    //----------------------------------------------
+    // COMMUNICATION TO DEVICES (publish our data)
+    //----------------------------------------------
+    
+    // Print our data in this order:
+    // flowRate, currentColorIndex, colorTemp, lux, sensorRedVal, sensorGreenVal, sensorBlueVal, sensorC;
+    
+    /*Serial.print(flowRate);
+     * Serial.print(",");
+     * Serial.print(currentColorIndex);
+     * Serial.print(",");
+     * Serial.print(colorTemp);
+     * Serial.print(",");
+     * Serial.print(lux);
+     * Serial.print(",");
+     * Serial.print(sensorRedVal);
+     * Serial.print(",");
+     * Serial.print(sensorGreenVal);
+     * Serial.print(",");
+     * Serial.print(sensorBlueVal);
+     * Serial.print(",");
+     * Serial.print(sensorC);
+     * Serial.print(",\n");*/
+    
+    /*BtSerial.print(flowRate);
+     * BtSerial.print(",");
+     * BtSerial.print(currentColorIndex);
+     * BtSerial.print(",");
+     * BtSerial.print(colorTemp);
+     * BtSerial.print(",");
+     * BtSerial.print(lux);
+     * BtSerial.print(",");
+     * BtSerial.print(sensorRedVal);
+     * BtSerial.print(",");
+     * BtSerial.print(sensorGreenVal);
+     * BtSerial.print(",");
+     * BtSerial.print(sensorBlueVal);
+     * BtSerial.print(",");
+     * BtSerial.print(sensorC);
+     * BtSerial.print(",\n");*/
+    
+    int r = sensorRedVal;
+    int g = sensorGreenVal;
+    int b = sensorBlueVal;
+    
+    char req[256];
+    sprintf(req,"GET /submit2?r=%d&g=%d&b=%d HTTP/1.1", r,g,b);
+    
+    // check the network connection once every 10 seconds:
+    delay(1000);
+    printCurrentNet();
+    
+    // For the next time around, we set up the next LED color to use.
+    // This will cycle from 0-2, where 0=red 1=green 2=blue
+    currentColorIndex++;
+    currentColorIndex = currentColorIndex % 3;
+    
+    Serial.println(req);
+    
+    //Send data over wifi connection
+    if(client.connect(server, 80)){
+        Serial.println("Connection started"); 
+        client.println(req);
+        client.println("Host: poop.com");
+        client.println("Connection: close");
+        client.println("");
+        client.flush();
+        
 
-  // Turn on interrupts so we can collect flowrate sensor interrupts.
-  interrupts();
-  // Allow interrupt collection for 1 second.
-  delay(1000);
-  // Turn interrupts off again.
-  noInterrupts();
-  // Calculate the flowrate from how many interrupts occured during one sec.
-  int flowRate = (flowSensorHighCount * 60.0 / 7.5);
-
-  //----------------------------------------------
-  // LED LIGHT (neopixel)
-  //----------------------------------------------
-
-  // this will naturally initialize to zero, and at the end of this
-  // loop function we cycle it from 0-2, where 0=red 1=green 2=blue
-  static unsigned currentColorIndex; 
-
-  int ledRedVal, ledGreenVal, ledBlueVal;
-  
-  if( currentColorIndex == 0 )
-  {
-    ledRedVal = 200; ledGreenVal = 0; ledBlueVal = 0;
-  }
-  if( currentColorIndex == 1 )
-  {
-    ledRedVal = 0; ledGreenVal = 200; ledBlueVal = 0;
-  }
-  if( currentColorIndex == 2 )
-  {
-    ledRedVal = 0; ledGreenVal = 0; ledBlueVal = 200;
-  }
-
-  // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
-  pixels.setPixelColor( 0, pixels.Color( ledRedVal, ledGreenVal, ledBlueVal ) );
-  pixels.show(); // This sends the updated pixel color to the hardware.
-
-  //----------------------------------------------
-  // COLOR SENSOR
-  //----------------------------------------------
-  
-  // Set up vars for color sensor
-  uint16_t sensorRedVal, sensorGreenVal, sensorBlueVal, sensorC, colorTemp, lux;
-
-  // Populate color sensor vars
-  tcs.getRawData( &sensorRedVal, &sensorGreenVal, &sensorBlueVal, &sensorC );
-  // calculate the rest of our color sensor values
-  colorTemp = tcs.calculateColorTemperature( sensorRedVal, sensorGreenVal, sensorBlueVal );
-  lux = tcs.calculateLux( sensorRedVal, sensorGreenVal, sensorBlueVal );
-
-  //----------------------------------------------
-  // COMMUNICATION TO DEVICES (publish our data)
-  //----------------------------------------------
-
-  // Print our data in this order:
-  // flowRate, currentColorIndex, colorTemp, lux, sensorRedVal, sensorGreenVal, sensorBlueVal, sensorC;
-
-  /*Serial.print(flowRate);
-  Serial.print(",");
-  Serial.print(currentColorIndex);
-  Serial.print(",");
-  Serial.print(colorTemp);
-  Serial.print(",");
-  Serial.print(lux);
-  Serial.print(",");
-  Serial.print(sensorRedVal);
-  Serial.print(",");
-  Serial.print(sensorGreenVal);
-  Serial.print(",");
-  Serial.print(sensorBlueVal);
-  Serial.print(",");
-  Serial.print(sensorC);
-  Serial.print(",\n");*/
-
-  /*BtSerial.print(flowRate);
-  BtSerial.print(",");
-  BtSerial.print(currentColorIndex);
-  BtSerial.print(",");
-  BtSerial.print(colorTemp);
-  BtSerial.print(",");
-  BtSerial.print(lux);
-  BtSerial.print(",");
-  BtSerial.print(sensorRedVal);
-  BtSerial.print(",");
-  BtSerial.print(sensorGreenVal);
-  BtSerial.print(",");
-  BtSerial.print(sensorBlueVal);
-  BtSerial.print(",");
-  BtSerial.print(sensorC);
-  BtSerial.print(",\n");*/
-
-  // check the network connection once every 10 seconds:
-  delay(10000);
-  printCurrentNet();
-  
-  // For the next time around, we set up the next LED color to use.
-  // This will cycle from 0-2, where 0=red 1=green 2=blue
-  currentColorIndex++;
-  currentColorIndex = currentColorIndex % 3;
-  
+        
+        { // clear data from buffer
+            Serial.print("Available bytes returned: ");
+            Serial.print(client.available());
+            Serial.println();
+            while(client.available()){
+                char buf[32];
+                client.readBytes(buf,32);
+                Serial.write((const uint8_t*)buf,32);
+                Serial.flush();
+            }
+            
+        }
+        client.stop();
+        
+    }
+    
+    
 } // END loop()
 
 //------------------------------------------------------------------
@@ -210,67 +263,67 @@ void loop()
 //------------------------------------------------------------------
 void RegisterFlowSensorHigh()
 {
-  // Increment the "high" counter global variable.
-  flowSensorHighCount++;
+    // Increment the "high" counter global variable.
+    flowSensorHighCount++;
 }
 
 //wifi functions
 void printWifiData() {
-  // print your WiFi shield's IP address:
-  IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
-  Serial.println(ip);
-  Serial.println(ip);
-
-  // print your MAC address:
-  byte mac[6];
-  WiFi.macAddress(mac);
-  Serial.print("MAC address: ");
-  Serial.print(mac[5], HEX);
-  Serial.print(":");
-  Serial.print(mac[4], HEX);
-  Serial.print(":");
-  Serial.print(mac[3], HEX);
-  Serial.print(":");
-  Serial.print(mac[2], HEX);
-  Serial.print(":");
-  Serial.print(mac[1], HEX);
-  Serial.print(":");
-  Serial.println(mac[0], HEX);
-
+    // print your WiFi shield's IP address:
+    IPAddress ip = WiFi.localIP();
+    Serial.print("IP Address: ");
+    Serial.println(ip);
+    Serial.println(ip);
+    
+    // print your MAC address:
+    byte mac[6];
+    WiFi.macAddress(mac);
+    Serial.print("MAC address: ");
+    Serial.print(mac[5], HEX);
+    Serial.print(":");
+    Serial.print(mac[4], HEX);
+    Serial.print(":");
+    Serial.print(mac[3], HEX);
+    Serial.print(":");
+    Serial.print(mac[2], HEX);
+    Serial.print(":");
+    Serial.print(mac[1], HEX);
+    Serial.print(":");
+    Serial.println(mac[0], HEX);
+    
 }
 
 void printCurrentNet() {
-  // print the SSID of the network you're attached to:
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
-
-  // print the MAC address of the router you're attached to:
-  byte bssid[6];
-  WiFi.BSSID(bssid);
-  Serial.print("BSSID: ");
-  Serial.print(bssid[5], HEX);
-  Serial.print(":");
-  Serial.print(bssid[4], HEX);
-  Serial.print(":");
-  Serial.print(bssid[3], HEX);
-  Serial.print(":");
-  Serial.print(bssid[2], HEX);
-  Serial.print(":");
-  Serial.print(bssid[1], HEX);
-  Serial.print(":");
-  Serial.println(bssid[0], HEX);
-
-  // print the received signal strength:
-  long rssi = WiFi.RSSI();
-  Serial.print("signal strength (RSSI):");
-  Serial.println(rssi);
-
-  // print the encryption type:
-  byte encryption = WiFi.encryptionType();
-  Serial.print("Encryption Type:");
-  Serial.println(encryption, HEX);
-  Serial.println();
+    // print the SSID of the network you're attached to:
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
+    
+    // print the MAC address of the router you're attached to:
+    byte bssid[6];
+    WiFi.BSSID(bssid);
+    Serial.print("BSSID: ");
+    Serial.print(bssid[5], HEX);
+    Serial.print(":");
+    Serial.print(bssid[4], HEX);
+    Serial.print(":");
+    Serial.print(bssid[3], HEX);
+    Serial.print(":");
+    Serial.print(bssid[2], HEX);
+    Serial.print(":");
+    Serial.print(bssid[1], HEX);
+    Serial.print(":");
+    Serial.println(bssid[0], HEX);
+    
+    // print the received signal strength:
+    long rssi = WiFi.RSSI();
+    Serial.print("signal strength (RSSI):");
+    Serial.println(rssi);
+    
+    // print the encryption type:
+    byte encryption = WiFi.encryptionType();
+    Serial.print("Encryption Type:");
+    Serial.println(encryption, HEX);
+    Serial.println();
 }
 
 // END OF FILE
