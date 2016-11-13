@@ -91,7 +91,7 @@ void setup()
         Serial.println("Found sensor");
     } else {
         Serial.println("No TCS34725 found ... check your connections");
-        while (1);
+        //while (1);
     }
     
     // Initialize the NeoPixel library.
@@ -214,7 +214,8 @@ void loop()
     int b = sensorBlueVal;
     
     char req[256];
-    sprintf(req,"GET /submit2?r=%d&g=%d&b=%d HTTP/1.1", r,g,b);
+    //sprintf(req,"GET /submit2?r=%d&g=%d&b=%d HTTP/1.1", r,g,b);
+    sprintf(req,"GET /submit2?r=50&g=50&b=50 HTTP/1.1", r,g,b);
     
     // check the network connection once every 10 seconds:
     delay(1000);
@@ -231,14 +232,14 @@ void loop()
     if(client.connect(server, 80)){
         Serial.println("Connection started"); 
         client.println(req);
-        client.println("Host: poop.com");
+        client.println("Host: cloud.tamu.edu");
         client.println("Connection: close");
         client.println("");
-        client.flush();
+        //client.flush();
         
 
         
-        { // clear data from buffer
+        /*{ // clear data from buffer
             Serial.print("Available bytes returned: ");
             Serial.print(client.available());
             Serial.println();
@@ -247,10 +248,10 @@ void loop()
                 client.readBytes(buf,32);
                 Serial.write((const uint8_t*)buf,32);
                 Serial.flush();
-            }
+            }*/
             
         }
-        client.stop();
+        //client.stop();
         
     }
     
