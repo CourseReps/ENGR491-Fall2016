@@ -4,25 +4,28 @@
 #include <Wire.h> // needed for I2C decives (SDA,SCL)
 #include "Adafruit_NeoPixel.h"
 #include "Adafruit_TCS34725.h"
+#include <SPI.h>
+#include <WiFi.h>
 
 #include <stdio.h>
 
-//wifi 
-#include <SPI.h>
-#include <WiFi.h>
-//#include <WiFiUdp.h>
+// ----------------------------------------------------------------
+// WiFi Config
+// ----------------------------------------------------------------
 
-char packetBuffer[255]; //buffer to hold incoming packet
-//char  ReplyBuffer[] = "http://rover1/submit?r=10&b=10&g=10";       // a string to send back
-unsigned int localPort = 2390;      // local port to listen on
-char server[] = "192.168.101.1";
-//byte server[] = {192,168,101,1};
+// WiFi - WPA2 AES CCPM
+char ssid[] = "rover1";          // Wifi network SSID (name)
+char pass[] = "hgoedbgmd";       // Wifi network password
+char server[] = "192.168.101.1"; // Web server address
+
+int status = WL_IDLE_STATUS; // holds the Wifi radio's status
+
+// Initialize an object using the Wifi client library
 WiFiClient client;
 
-//Wifi - WPA2 AES CCPM
-char ssid[] = "rover1";     //  your network SSID (name)
-char pass[] = "hgoedbgmd";  // your network password
-int status = WL_IDLE_STATUS;     // the Wifi radio's status
+// ----------------------------------------------------------------
+// Neopixel Config
+// ----------------------------------------------------------------
 
 // Which pin on the Arduino is connected to the NeoPixels?
 const int PIN_NEOPIXEL_OUT = 6;
@@ -30,29 +33,52 @@ const int PIN_NEOPIXEL_OUT = 6;
 // When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(1, PIN_NEOPIXEL_OUT, NEO_GRB + NEO_KHZ800);
 
-// Color sensor setup
+// ----------------------------------------------------------------
+// Color Sensor Config
+// ----------------------------------------------------------------
+
+// Initializes the color sensor object using it's library
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_700MS, TCS34725_GAIN_1X);
 
-const int PIN_FLOWSENSOR_IN = 2; //must be a pin capable of an external hardware interupt
+// ----------------------------------------------------------------
+// Flow Sensor Config
+// ----------------------------------------------------------------
 
-// Counts the number of times that the HIGH signal is reached
+// Must be a pin capable of an external hardware interupt
+const int PIN_FLOWSENSOR_IN = 3;
+
+// Gets incremented every time the HIGH signal is reached
 volatile unsigned int flowSensorHighCount;
 
 //------------------------------------------------------------------
 // Setup() is the first function to execute.
 //------------------------------------------------------------------
 void setup()
-{  
+{
     // Open serial communications and wait for port to open:
     Serial.begin(9600);
     
-    // Set the data rate and start the SoftwareSerial port
-    //BtSerial.begin(9600);
-    //wifi init part 
-    while (!Serial) {
-        ; // wait for serial port to connect. Needed for native USB port only
+    // Wait for serial port to connect.
+    //while (!Serial) { ; }
+
+    // Check for presence of color sensor
+    if (tcs.begin()) {
+        Serial.println("Found sensor");
+    } else {
+        Serial.println("No TCS34725 found ... check your connections");
     }
-    // check for the presence of the shield:
+    
+    // Start the NeoPixels
+    pixels.begin();
+
+    // Assign the functionality of flowsensor pin
+    pinMode( PIN_FLOWSENSOR_IN, INPUT );
+    
+    // Assign an interrupt so that when the flow sensor pin goes from
+    // LOW to HIGH, a function will be triggered.
+    attachInterrupt(digitalPinToInterrupt(PIN_FLOWSENSOR_IN), RegisterFlowSensorHigh, RISING);
+
+    // check for the presence of the wifi shield:
     if (WiFi.status() == WL_NO_SHIELD) {
         Serial.println("WiFi shield not present");
         // don't continue:
@@ -60,46 +86,100 @@ void setup()
     }
     //  WiFi.config(ip);
     
-    
-    
     String fv = WiFi.firmwareVersion();
     if (fv != "1.1.0") {
-        Serial.println("Please upgrade the firmware");
+        Serial.println("Please upgrade the Wifi shield firmware");
     }
     
-    // attempt to connect to Wifi network:
+    // Attempt to connect to Wifi network:
     while (status != WL_CONNECTED) {
         Serial.print("Attempting to connect to WPA SSID: ");
         Serial.println(ssid);
+        
         // Connect to WPA/WPA2 network:
         status = WiFi.begin(ssid, pass);
         
-        // wait 10 seconds for connection:
+        // Wait 10 seconds for connection to occurr
         delay(10000);
     }
     
-    // you're connected now, so print out the data:
-    Serial.print("You're connected to the network");
+    // You're connected to Wifi now, so print out the data:
+    Serial.print("You're connected to the WiFi network");
     printCurrentNet();
-    printWifiData();
-    //wifi init part done
+    printWifiStatus();
+}
+
+// Wifi functions
+void printWifiStatus() {
+  
+    // print the SSID of the network you're attached to:
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
+  
+    // print your WiFi shield's IP address:
+    IPAddress ip = WiFi.localIP();
+    Serial.print("IP Address: ");
+    Serial.println(ip);
+    Serial.println(ip);
     
-    // Assign the functionality of pins
-    pinMode( PIN_FLOWSENSOR_IN, INPUT );
+    // print your MAC address:
+    byte mac[6];
+    WiFi.macAddress(mac);
+    Serial.print("MAC address: ");
+    Serial.print(mac[5], HEX);
+    Serial.print(":");
+    Serial.print(mac[4], HEX);
+    Serial.print(":");
+    Serial.print(mac[3], HEX);
+    Serial.print(":");
+    Serial.print(mac[2], HEX);
+    Serial.print(":");
+    Serial.print(mac[1], HEX);
+    Serial.print(":");
+    Serial.println(mac[0], HEX);
+}
+
+void printCurrentNet() {
+    // print the SSID of the network you're attached to:
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
     
-    if (tcs.begin()) {
-        Serial.println("Found sensor");
-    } else {
-        Serial.println("No TCS34725 found ... check your connections");
-        //while (1);
-    }
+    // print the MAC address of the router you're attached to:
+    byte bssid[6];
+    WiFi.BSSID(bssid);
+    Serial.print("BSSID: ");
+    Serial.print(bssid[5], HEX);
+    Serial.print(":");
+    Serial.print(bssid[4], HEX);
+    Serial.print(":");
+    Serial.print(bssid[3], HEX);
+    Serial.print(":");
+    Serial.print(bssid[2], HEX);
+    Serial.print(":");
+    Serial.print(bssid[1], HEX);
+    Serial.print(":");
+    Serial.println(bssid[0], HEX);
     
-    // Initialize the NeoPixel library.
-    pixels.begin(); 
+    // print the received signal strength:
+    long rssi = WiFi.RSSI();
+    Serial.print("signal strength (RSSI):");
+    Serial.println(rssi);
     
-    // Assign an interrupt so that when the flow sensor pin goes from
-    // LOW to HIGH, a function will be triggered.
-    //attachInterrupt(digitalPinToInterrupt(PIN_FLOWSENSOR_IN), RegisterFlowSensorHigh, RISING);
+    // print the encryption type:
+    byte encryption = WiFi.encryptionType();
+    Serial.print("Encryption Type:");
+    Serial.println(encryption, HEX);
+    Serial.println();
+}
+
+//------------------------------------------------------------------
+// Called via interrupt when the PIN_FLOWSENSOR_IN's square wave
+// transitions from LOW to HIGH voltage.
+//------------------------------------------------------------------
+void RegisterFlowSensorHigh()
+{
+    // Increment the "high" counter global variable.
+    flowSensorHighCount++;
 }
 
 //------------------------------------------------------------------
@@ -159,14 +239,10 @@ void loop()
     
     // Populate color sensor vars
     tcs.getRawData( &sensorRedVal, &sensorGreenVal, &sensorBlueVal, &sensorC );
-    // calculate the rest of our color sensor values
+    
+    // Calculate the rest of our color sensor values
     colorTemp = tcs.calculateColorTemperature( sensorRedVal, sensorGreenVal, sensorBlueVal );
     lux = tcs.calculateLux( sensorRedVal, sensorGreenVal, sensorBlueVal );
-    
-    //wifi send
-    //Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-    //Udp.write(ReplyBuffer);
-    //Udp.endPacket();
     
     //----------------------------------------------
     // COMMUNICATION TO DEVICES (publish our data)
@@ -174,157 +250,49 @@ void loop()
     
     // Print our data in this order:
     // flowRate, currentColorIndex, colorTemp, lux, sensorRedVal, sensorGreenVal, sensorBlueVal, sensorC;
+
+    String req = "GET ";
+    req += "/submit2?";
+    req += "r=";
+    req += sensorRedVal;
+    req += "&g=";
+    req += sensorGreenVal;
+    req += "&b=";
+    req += sensorBlueVal;
+    req += "&f=";
+    req += flowRate;
+    req += "&v=";          //voltage
+    req += 100;            
+    req += "&t=";          //unix epoch time
+    req += 1234;
+    req += " HTTP/1.1";
     
-    /*Serial.print(flowRate);
-     * Serial.print(",");
-     * Serial.print(currentColorIndex);
-     * Serial.print(",");
-     * Serial.print(colorTemp);
-     * Serial.print(",");
-     * Serial.print(lux);
-     * Serial.print(",");
-     * Serial.print(sensorRedVal);
-     * Serial.print(",");
-     * Serial.print(sensorGreenVal);
-     * Serial.print(",");
-     * Serial.print(sensorBlueVal);
-     * Serial.print(",");
-     * Serial.print(sensorC);
-     * Serial.print(",\n");*/
-    
-    /*BtSerial.print(flowRate);
-     * BtSerial.print(",");
-     * BtSerial.print(currentColorIndex);
-     * BtSerial.print(",");
-     * BtSerial.print(colorTemp);
-     * BtSerial.print(",");
-     * BtSerial.print(lux);
-     * BtSerial.print(",");
-     * BtSerial.print(sensorRedVal);
-     * BtSerial.print(",");
-     * BtSerial.print(sensorGreenVal);
-     * BtSerial.print(",");
-     * BtSerial.print(sensorBlueVal);
-     * BtSerial.print(",");
-     * BtSerial.print(sensorC);
-     * BtSerial.print(",\n");*/
-    
-    int r = sensorRedVal;
-    int g = sensorGreenVal;
-    int b = sensorBlueVal;
-    
-    char req[256];
-    //sprintf(req,"GET /submit2?r=%d&g=%d&b=%d HTTP/1.1", r,g,b);
-    sprintf(req,"GET /submit2?r=50&g=50&b=50 HTTP/1.1", r,g,b);
-    
-    // check the network connection once every 10 seconds:
-    delay(1000);
-    printCurrentNet();
+    //***************** Make HTTP GET REQUEST *****************
+
+    // close any connection before send a new request.
+    // This will free the socket on the WiFi shield
+    client.stop();
+
+    // if there's a successful connection:
+    if (client.connect(server, 80)) {
+        Serial.println("Requesting..." + req);
+        // Send the HTTP PUT request:
+        client.println(req);
+        client.println("Host: 192.168.101.1");
+        client.println("User-Agent: ArduinoWiFi/1.1");
+        client.println("Connection: close");
+        client.println();
+    } else {
+        // Couldn't make a connection:
+        Serial.println("httpRequest(): client.connect() failed.");
+    }
+    //********************************************************
     
     // For the next time around, we set up the next LED color to use.
     // This will cycle from 0-2, where 0=red 1=green 2=blue
     currentColorIndex++;
     currentColorIndex = currentColorIndex % 3;
     
-    Serial.println(req);
-    
-    //Send data over wifi connection
-    if(client.connect(server, 80)){
-        Serial.println("Connection started"); 
-        client.println(req);
-        client.println("Host: cloud.tamu.edu");
-        client.println("Connection: close");
-        client.println("");
-        //client.flush();
-        
-
-        
-        /*{ // clear data from buffer
-            Serial.print("Available bytes returned: ");
-            Serial.print(client.available());
-            Serial.println();
-            while(client.available()){
-                char buf[32];
-                client.readBytes(buf,32);
-                Serial.write((const uint8_t*)buf,32);
-                Serial.flush();
-            }*/
-            
-        }
-        //client.stop();
-        
-    }
-    
-    
 } // END loop()
-
-//------------------------------------------------------------------
-// Called via interrupt when the PIN_FLOWSENSOR_IN's square wave
-// transitions from LOW to HIGH voltage.
-//------------------------------------------------------------------
-void RegisterFlowSensorHigh()
-{
-    // Increment the "high" counter global variable.
-    flowSensorHighCount++;
-}
-
-//wifi functions
-void printWifiData() {
-    // print your WiFi shield's IP address:
-    IPAddress ip = WiFi.localIP();
-    Serial.print("IP Address: ");
-    Serial.println(ip);
-    Serial.println(ip);
-    
-    // print your MAC address:
-    byte mac[6];
-    WiFi.macAddress(mac);
-    Serial.print("MAC address: ");
-    Serial.print(mac[5], HEX);
-    Serial.print(":");
-    Serial.print(mac[4], HEX);
-    Serial.print(":");
-    Serial.print(mac[3], HEX);
-    Serial.print(":");
-    Serial.print(mac[2], HEX);
-    Serial.print(":");
-    Serial.print(mac[1], HEX);
-    Serial.print(":");
-    Serial.println(mac[0], HEX);
-    
-}
-
-void printCurrentNet() {
-    // print the SSID of the network you're attached to:
-    Serial.print("SSID: ");
-    Serial.println(WiFi.SSID());
-    
-    // print the MAC address of the router you're attached to:
-    byte bssid[6];
-    WiFi.BSSID(bssid);
-    Serial.print("BSSID: ");
-    Serial.print(bssid[5], HEX);
-    Serial.print(":");
-    Serial.print(bssid[4], HEX);
-    Serial.print(":");
-    Serial.print(bssid[3], HEX);
-    Serial.print(":");
-    Serial.print(bssid[2], HEX);
-    Serial.print(":");
-    Serial.print(bssid[1], HEX);
-    Serial.print(":");
-    Serial.println(bssid[0], HEX);
-    
-    // print the received signal strength:
-    long rssi = WiFi.RSSI();
-    Serial.print("signal strength (RSSI):");
-    Serial.println(rssi);
-    
-    // print the encryption type:
-    byte encryption = WiFi.encryptionType();
-    Serial.print("Encryption Type:");
-    Serial.println(encryption, HEX);
-    Serial.println();
-}
 
 // END OF FILE
