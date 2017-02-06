@@ -60,7 +60,7 @@ The `status` command lists the status of working files and directories.
 
 * __Account__: Go to [GitHub](https://github.com) and create a developer account (if needed).
 Complete the GitHub fields `Name`, `Public email`, and upload a picture.
-Accept the GitHub request sent to your university email;
+Accept the invitation sent through GitHub by your instructor to your TAMU account;
 you will need write permission before you can proceed further.
 * __Clone__: Use `git` to clone the master repository.
 * __Directory__: Under `Students` (in the master branch), make a directory named `<GitHubID>`.
